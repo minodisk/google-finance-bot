@@ -1,0 +1,20 @@
+{
+  "name": "google-finance-bot",
+  "version": "0.0.0",
+  "description": "A bot captures the chart of a specific stock in Google Finance.",
+  "main": "index.js",
+  "repository": "git@github.com:minodisk/google-finance-bot.git",
+  "author": "Daisuke Mino <daisuke.mino@gmail.com>",
+  "license": "Apache-2",
+  "scripts": {
+    "emulate": "yarn functions deploy googleFinanceBot --trigger-http && yarn functions inspect googleFinanceBot",
+    "deploy": "gcloud beta functions deploy googleFinanceBot --trigger-http --runtime=nodejs10 --memory=2048MB"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "2.5.0",
+    "puppeteer": "^1.17.0"
+  },
+  "devDependencies": {
+    "prettier": "^1.18.2"
+  }
+}
