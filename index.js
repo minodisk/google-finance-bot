@@ -42,35 +42,7 @@ module.exports.googleFinanceBot = async (req, res) => {
     const query = `${$1} ${$2}`;
     console.log("query:", query);
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox"],
-    });
-    const page = await browser.newPage();
-    await page.goto(`https://www.google.co.jp/search?tbm=fin&q=${query}`);
-
-    const title = await page.$eval(
-      "[data-attrid='title']",
-      el => el.textContent,
-    );
-    const subtitle = await page.$eval(
-      "[data-attrid='subtitle']",
-      el => el.textContent,
-    );
-
-    const selector = "#knowledge-finance-wholepage__entity-summary";
-    const clip = await page.evaluate(selector => {
-      const element = document.querySelector(selector);
-      if (!element) return null;
-      const { x, y, width, height } = element.getBoundingClientRect();
-      return { x, y, width, height };
-    }, selector);
-
-    if (!clip) {
-      throw Error(`Could not find element that matches selector: ${selector}.`);
-    }
-    console.log("capture:", clip);
-    const png = await page.screenshot({ clip });
+    const { title, subtitle, png } = await capture(query);
 
     console.log("save file to:", BUCKET_NAME, fileName);
     await file.save(png, { contentType: "image/png", public: true });
@@ -121,3 +93,53 @@ module.exports.googleFinanceBot = async (req, res) => {
     res.status(500).send(err.toString());
   }
 };
+
+async function capture(query) {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox"],
+  });
+  const page = await browser.newPage();
+
+  console.log("goto:", query);
+
+  await page.goto(`https://www.google.co.jp/search?tbm=fin&q=${query}`, {
+    waitUntil: "domcontentloaded",
+    timeout: 5000,
+  });
+  // await page.waitFor("[data-attrid='title']", { timeout: 60000 });
+
+  const title = await page.$eval("[data-attrid='title']", el => el.textContent);
+  const subtitle = await page.$eval(
+    "[data-attrid='subtitle']",
+    el => el.textContent,
+  );
+
+  console.log("elements:", title, subtitle);
+
+  const selector = "#knowledge-finance-wholepage__entity-summary";
+  const clip = await page.evaluate(selector => {
+    const element = document.querySelector(selector);
+    if (!element) return null;
+    const { x, y, width, height } = element.getBoundingClientRect();
+    return { x, y, width, height };
+  }, selector);
+
+  if (!clip) {
+    throw Error(`Could not find element that matches selector: ${selector}.`);
+  }
+  console.log("clip:", clip);
+  const png = await page.screenshot({ clip });
+  await browser.close();
+
+  return {
+    title,
+    subtitle,
+    png,
+  };
+}
+
+// (async () => {
+//   const { title, subtitle, png } = await capture("zozo");
+//   console.log(title, subtitle, png);
+// })();
