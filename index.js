@@ -97,13 +97,33 @@ module.exports.googleFinanceBot = async (req, res) => {
 async function capture(query) {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox"],
+    args: ["--no-sandbox", "--lang=ja-JP,ja"],
   });
+
   const page = await browser.newPage();
+  await page.setExtraHTTPHeaders({
+    "Accept-Language": "ja-JP,ja",
+  });
+  const headlessUserAgent = await page.evaluate(() => navigator.userAgent);
+  const chromeUserAgent = headlessUserAgent.replace("HeadlessChrome", "Chrome");
+  console.log("UserAgent:", chromeUserAgent);
+  await page.setUserAgent(chromeUserAgent);
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "language", {
+      get: function() {
+        return ["ja-JP"];
+      },
+    });
+    Object.defineProperty(navigator, "languages", {
+      get: function() {
+        return ["ja-JP", "ja"];
+      },
+    });
+  });
 
-  console.log("goto:", query);
-
-  await page.goto(`https://www.google.co.jp/search?tbm=fin&q=${query}`, {
+  const url = `https://www.google.co.jp/search?hl=ja&tbm=fin&q=${query}`;
+  console.log("goto:", url);
+  await page.goto(url, {
     waitUntil: "domcontentloaded",
     timeout: 5000,
   });
@@ -141,5 +161,6 @@ async function capture(query) {
 
 // (async () => {
 //   const { title, subtitle, png } = await capture("zozo");
-//   console.log(title, subtitle, png);
+//   console.log(title, subtitle);
+//   require("fs").writeFileSync("capture.png", png);
 // })();
