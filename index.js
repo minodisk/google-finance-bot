@@ -1,6 +1,6 @@
 const puppeteer = require("puppeteer");
 const { Storage } = require("@google-cloud/storage");
-const https = require("https");
+const request = require("request-promise-native");
 
 const { BUCKET_NAME, OAUTH_ACCESS_TOKEN } = process.env;
 const storage = new Storage();
@@ -44,10 +44,10 @@ module.exports.googleFinanceBot = async (req, res) => {
 
     const { title, subtitle, png } = await capture(query);
 
-    console.log("save file to:", BUCKET_NAME, fileName);
+    console.log("save file as:", BUCKET_NAME, fileName);
     await file.save(png, { contentType: "image/png", public: true });
 
-    const postData = JSON.stringify({
+    const postData = {
       channel,
       attachments: [
         {
@@ -56,36 +56,33 @@ module.exports.googleFinanceBot = async (req, res) => {
           image_url: `https://storage.googleapis.com/${BUCKET_NAME}/${fileName}`,
         },
       ],
-    });
+    };
     console.log("post:", postData);
-    const r = https.request(
-      {
-        method: "post",
-        hostname: "slack.com",
-        path: "/api/chat.postMessage",
-        headers: {
-          Authorization: `Bearer ${OAUTH_ACCESS_TOKEN}`,
-          "Content-Type": "application/json; charset=utf-8",
-          "Content-Length": Buffer.byteLength(postData),
-        },
+    const r = await request.post({
+      url: "https://slack.com/api/chat.postMessage",
+      headers: {
+        Authorization: `Bearer ${OAUTH_ACCESS_TOKEN}`,
+        // "Content-Type": "application/json; charset=utf-8",
+        // "Content-Length": Buffer.byteLength(postData),
       },
-      res => {
-        console.log(`STATUS: ${res.statusCode}`);
-        console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
-        res.setEncoding("utf8");
-        res.on("data", chunk => {
-          console.log(`BODY: ${chunk}`);
-        });
-        res.on("end", () => {
-          console.log("No more data in response.");
-        });
-      },
-    );
-    r.on("error", e => {
-      console.error(`problem with request: ${e.message}`);
+      body: postData,
+      json: true,
     });
-    r.write(postData);
-    r.end();
+
+    console.log(`STATUS: ${r.statusCode}`);
+    console.log(`HEADERS: ${JSON.stringify(r.headers)}`);
+    // res.setEncoding("utf8");
+    // res.on("data", chunk => {
+    //   console.log(`BODY: ${chunk}`);
+    // });
+    // res.on("end", () => {
+    //   console.log("No more data in response.");
+    // });
+    // r.on("error", e => {
+    //   console.error(`problem with request: ${e.message}`);
+    // });
+    // r.write(postData);
+    // r.end();
 
     res.status(200).send("OK");
   } catch (err) {
@@ -97,12 +94,26 @@ module.exports.googleFinanceBot = async (req, res) => {
 async function capture(query) {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--lang=ja-JP,ja"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "-–disable-dev-shm-usage",
+      // "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
+      "--lang=ja-JP",
+    ],
   });
 
   const page = await browser.newPage();
+  await page.setViewport({
+    width: 640,
+    height: 480,
+    deviceScaleFactor: 2,
+  });
   await page.setExtraHTTPHeaders({
-    "Accept-Language": "ja-JP,ja",
+    "Accept-Language": "ja-JP",
   });
   const headlessUserAgent = await page.evaluate(() => navigator.userAgent);
   const chromeUserAgent = headlessUserAgent.replace("HeadlessChrome", "Chrome");
@@ -123,12 +134,19 @@ async function capture(query) {
 
   const url = `https://www.google.co.jp/search?hl=ja&tbm=fin&q=${query}`;
   console.log("goto:", url);
-  await page.goto(url, {
-    waitUntil: "domcontentloaded",
-    timeout: 5000,
-  });
-  // await page.waitFor("[data-attrid='title']", { timeout: 60000 });
+  for (let i = 0; i < 10; i++) {
+    try {
+      await page.goto(url, {
+        waitUntil: "networkidle2",
+        timeout: 3000,
+      });
+      break;
+    } catch (err) {
+      // ignore
+    }
+  }
 
+  await page.waitFor("[data-attrid='title']", { timeout: 10000 });
   const title = await page.$eval("[data-attrid='title']", el => el.textContent);
   const subtitle = await page.$eval(
     "[data-attrid='subtitle']",
